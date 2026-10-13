@@ -28,6 +28,7 @@ typedef struct {
 } hw_dev_t;
 
 void        hw_init(hw_dev_t *dev, I2C_HandleTypeDef *hi2c);
+void        i2c_bus_unlock(I2C_HandleTypeDef *hi2c);
 hw_status_t hw_request(hw_dev_t *dev);                 /* start measurement */
 hw_status_t hw_read(hw_dev_t *dev, hw_data_t *out);    /* HW_BUSY until ready */
 

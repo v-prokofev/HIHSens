@@ -6,13 +6,55 @@
 
 #define HW_I2C_TIMEOUT_MS 25u
 
-static void bus_recover(I2C_HandleTypeDef *hi2c)
+void i2c_bus_unlock(I2C_HandleTypeDef *hi2c)
 {
-	/* Hardware SWRST to clear stuck BUSY flag in STM32F1 */
+	GPIO_TypeDef *gpio = GPIOB;
+	uint16_t scl = (hi2c->Instance == I2C1) ? GPIO_PIN_6 : GPIO_PIN_10;
+	uint16_t sda = (hi2c->Instance == I2C1) ? GPIO_PIN_7 : GPIO_PIN_11;
+
+	/* 1. Force peripheral SWRST */
 	hi2c->Instance->CR1 |= I2C_CR1_SWRST;
 	for (volatile int i = 0; i < 2000; i++) {}
 	hi2c->Instance->CR1 &= ~I2C_CR1_SWRST;
+
+	/* 2. Switch SCL/SDA to Output Open Drain to clock out any stuck slave */
+	GPIO_InitTypeDef g = {0};
+	g.Pin = scl | sda;
+	g.Mode = GPIO_MODE_OUTPUT_OD;
+	g.Speed = GPIO_SPEED_FREQ_HIGH;
+	HAL_GPIO_Init(gpio, &g);
+
+	HAL_GPIO_WritePin(gpio, sda, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(gpio, scl, GPIO_PIN_SET);
+	for (volatile int i = 0; i < 500; i++) {}
+
+	/* 9 clock cycles on SCL */
+	for (int i = 0; i < 9; i++) {
+		HAL_GPIO_WritePin(gpio, scl, GPIO_PIN_RESET);
+		for (volatile int j = 0; j < 500; j++) {}
+		HAL_GPIO_WritePin(gpio, scl, GPIO_PIN_SET);
+		for (volatile int j = 0; j < 500; j++) {}
+	}
+
+	/* Generate STOP: SDA 0 -> SCL 1 -> SDA 1 */
+	HAL_GPIO_WritePin(gpio, sda, GPIO_PIN_RESET);
+	for (volatile int j = 0; j < 500; j++) {}
+	HAL_GPIO_WritePin(gpio, scl, GPIO_PIN_SET);
+	for (volatile int j = 0; j < 500; j++) {}
+	HAL_GPIO_WritePin(gpio, sda, GPIO_PIN_SET);
+	for (volatile int j = 0; j < 500; j++) {}
+
+	/* 3. Switch back to Alternate Function Open Drain */
+	g.Mode = GPIO_MODE_AF_OD;
+	HAL_GPIO_Init(gpio, &g);
+
+	/* 4. Re-init I2C peripheral */
 	HAL_I2C_Init(hi2c);
+}
+
+static void bus_recover(I2C_HandleTypeDef *hi2c)
+{
+	i2c_bus_unlock(hi2c);
 }
 
 void hw_init(hw_dev_t *dev, I2C_HandleTypeDef *hi2c)

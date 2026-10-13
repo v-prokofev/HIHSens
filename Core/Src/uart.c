@@ -64,27 +64,17 @@ void uart_init(uint32_t baud)
 
 void uart_send(const char *s)
 {
-	size_t n = strlen(s);
-	if (n == 0) return;
-	if (n > TX_SIZE) n = TX_SIZE;
-
-	tx_wait();
-	DMA1_Channel4->CCR &= ~DMA_CCR_EN;
-	DMA1->IFCR = DMA_IFCR_CGIF4;
-	memcpy(tx_buf, s, n);
-	DMA1_Channel4->CMAR  = (uint32_t)tx_buf;
-	DMA1_Channel4->CNDTR = n;
-	USART1->SR &= ~USART_SR_TC;
-	DMA1_Channel4->CCR = DMA_CCR_MINC | DMA_CCR_DIR | DMA_CCR_EN;
-
-	/* Also wait briefly, and if DMA didn't start or completed, ensure TXE */
-	uint32_t to = 200000;
-	while (!(DMA1->ISR & DMA_ISR_TCIF4) && --to) {}
+	while (*s) {
+		uint32_t to = 100000;
+		while (!(USART1->SR & USART_SR_TXE) && --to) {}
+		USART1->DR = (uint8_t)(*s++);
+	}
+	uint32_t to = 100000;
+	while (!(USART1->SR & USART_SR_TC) && --to) {}
 }
 
 int uart_getc(void)
 {
-	/* Clear UART overrun/noise/framing errors that freeze reception */
 	if (USART1->SR & (USART_SR_ORE | USART_SR_NE | USART_SR_FE | USART_SR_PE)) {
 		volatile uint32_t sr = USART1->SR;
 		volatile uint32_t dr = USART1->DR;
@@ -92,10 +82,8 @@ int uart_getc(void)
 		(void)dr;
 	}
 
-	uint16_t head = RX_SIZE - DMA1_Channel5->CNDTR;
-	if (head >= RX_SIZE) head = 0;
-	if (head == rx_tail) return -1;
-	uint8_t c = rx_buf[rx_tail];
-	rx_tail = (rx_tail + 1) % RX_SIZE;
-	return c;
+	if (USART1->SR & USART_SR_RXNE) {
+		return (uint8_t)(USART1->DR & 0xFF);
+	}
+	return -1;
 }

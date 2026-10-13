@@ -381,6 +381,9 @@ void app_init(I2C_HandleTypeDef *i2c_s1, I2C_HandleTypeDef *i2c_s2)
 	hw_init(&s[0].dev, i2c_s1);
 	hw_init(&s[1].dev, i2c_s2);
 
+	i2c_bus_unlock(i2c_s1);
+	i2c_bus_unlock(i2c_s2);
+
 	vpmenu_init((uint8_t *)line, sizeof(line));
 	vpmenu_register_handler("help", cmd_help);
 	vpmenu_register_handler("info", cmd_info);
