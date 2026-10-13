@@ -4,12 +4,14 @@
  */
 #include "honeywell.h"
 
-#define HW_I2C_TIMEOUT_MS 5u
+#define HW_I2C_TIMEOUT_MS 25u
 
 static void bus_recover(I2C_HandleTypeDef *hi2c)
 {
-	/* re-init peripheral, clears stuck BUSY flag */
-	HAL_I2C_DeInit(hi2c);
+	/* Hardware SWRST to clear stuck BUSY flag in STM32F1 */
+	hi2c->Instance->CR1 |= I2C_CR1_SWRST;
+	for (volatile int i = 0; i < 2000; i++) {}
+	hi2c->Instance->CR1 &= ~I2C_CR1_SWRST;
 	HAL_I2C_Init(hi2c);
 }
 

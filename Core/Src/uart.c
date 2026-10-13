@@ -76,12 +76,24 @@ void uart_send(const char *s)
 	DMA1_Channel4->CNDTR = n;
 	USART1->SR &= ~USART_SR_TC;
 	DMA1_Channel4->CCR = DMA_CCR_MINC | DMA_CCR_DIR | DMA_CCR_EN;
+
+	/* Also wait briefly, and if DMA didn't start or completed, ensure TXE */
+	uint32_t to = 200000;
+	while (!(DMA1->ISR & DMA_ISR_TCIF4) && --to) {}
 }
 
 int uart_getc(void)
 {
+	/* Clear UART overrun/noise/framing errors that freeze reception */
+	if (USART1->SR & (USART_SR_ORE | USART_SR_NE | USART_SR_FE | USART_SR_PE)) {
+		volatile uint32_t sr = USART1->SR;
+		volatile uint32_t dr = USART1->DR;
+		(void)sr;
+		(void)dr;
+	}
+
 	uint16_t head = RX_SIZE - DMA1_Channel5->CNDTR;
-	if (head == RX_SIZE) head = 0;
+	if (head >= RX_SIZE) head = 0;
 	if (head == rx_tail) return -1;
 	uint8_t c = rx_buf[rx_tail];
 	rx_tail = (rx_tail + 1) % RX_SIZE;

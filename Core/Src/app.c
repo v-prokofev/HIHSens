@@ -225,11 +225,38 @@ static int cmd_help(float a, float b)
 	puts_ln("commands:");
 	puts_ln("  help");
 	puts_ln("  info");
+	puts_ln("  scan                 I2C bus address scan");
 	puts_ln("  set_id ID            0..999");
 	puts_ln("  set_br BAUDRATE      1200..921600");
 	puts_ln("  freq HZ              0.01..10");
 	puts_ln("  debug 0|1");
 	puts_ln("  set_time yyyy-mm-dd hh:mm:ss[.xxx]");
+	return 0;
+}
+
+static void i2c_scan_bus(I2C_HandleTypeDef *hi2c, const char *name)
+{
+	char msg[64];
+	sprintf(msg, "%s scan:", name);
+	uart_send(msg);
+	int found = 0;
+	for (uint16_t addr = 1; addr < 128; addr++) {
+		if (HAL_I2C_IsDeviceReady(hi2c, (addr << 1), 1, 10) == HAL_OK) {
+			sprintf(msg, " 0x%02X", addr);
+			uart_send(msg);
+			found++;
+		}
+	}
+	if (!found) {
+		uart_send(" none found");
+	}
+	puts_ln("");
+}
+
+static int cmd_scan(float a, float b)
+{
+	i2c_scan_bus(s[0].dev.hi2c, "I2C1");
+	i2c_scan_bus(s[1].dev.hi2c, "I2C2");
 	return 0;
 }
 
@@ -357,6 +384,7 @@ void app_init(I2C_HandleTypeDef *i2c_s1, I2C_HandleTypeDef *i2c_s2)
 	vpmenu_init((uint8_t *)line, sizeof(line));
 	vpmenu_register_handler("help", cmd_help);
 	vpmenu_register_handler("info", cmd_info);
+	vpmenu_register_handler("scan", cmd_scan);
 	vpmenu_register_handler("set_id", cmd_set_id);
 	vpmenu_register_handler("set_br", cmd_set_br);
 	vpmenu_register_handler("freq", cmd_freq);
@@ -364,6 +392,7 @@ void app_init(I2C_HandleTypeDef *i2c_s1, I2C_HandleTypeDef *i2c_s2)
 	vpmenu_register_handler("set_time", cmd_set_time);
 
 	cmd_info(0, 0);
+	cmd_scan(0, 0);
 }
 
 void app_loop(void)
