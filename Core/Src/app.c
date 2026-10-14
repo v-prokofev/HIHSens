@@ -323,7 +323,11 @@ static void handle_line(void)
 {
 	uart_rx_cnt++;
 	int r = vpmenu_parse_str();
-	puts_ln(r == 0 ? "OK" : "ERR");
+	if (r == 0) {
+		puts_ln("OK");
+	} else {
+		puts_ln("ERR: unknown command or invalid arguments. Type 'help' for available commands");
+	}
 	if (pending_baud) { uart_set_baud(pending_baud); pending_baud = 0; }
 }
 
