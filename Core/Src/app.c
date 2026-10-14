@@ -232,19 +232,72 @@ static int cmd_help(float a, float b)
 	return 0;
 }
 
-static void i2c_scan_bus(I2C_HandleTypeDef *hi2c, const char *name)
+static void i2c_pin_test(I2C_HandleTypeDef *hi2c, const char *name)
 {
 	char msg[96];
 	int scl_pin = (hi2c->Instance == I2C1) ? 6 : 10;
 	int sda_pin = (hi2c->Instance == I2C1) ? 7 : 11;
-	uint8_t scl_lvl = (GPIOB->IDR >> scl_pin) & 1;
-	uint8_t sda_lvl = (GPIOB->IDR >> sda_pin) & 1;
+	uint16_t scl_mask = (1u << scl_pin);
+	uint16_t sda_mask = (1u << sda_pin);
 
-	sprintf(msg, "%s (PB%d/PB%d) lines: SCL=%u SDA=%u | scan:",
-			name, scl_pin, sda_pin, scl_lvl, sda_lvl);
+	/* Switch SCL and SDA to Output Open-Drain to test lines safely */
+	GPIO_InitTypeDef g = {0};
+	g.Pin = scl_mask | sda_mask;
+	g.Mode = GPIO_MODE_OUTPUT_OD;
+	g.Speed = GPIO_SPEED_FREQ_HIGH;
+	HAL_GPIO_Init(GPIOB, &g);
+
+	/* 1. Release both: with pull-up resistors both must be 1 */
+	HAL_GPIO_WritePin(GPIOB, scl_mask | sda_mask, GPIO_PIN_SET);
+	for (volatile int i = 0; i < 500; i++) {}
+	uint8_t scl_hi = (GPIOB->IDR >> scl_pin) & 1;
+	uint8_t sda_hi = (GPIOB->IDR >> sda_pin) & 1;
+
+	/* 2. Pull SCL low, leave SDA released */
+	HAL_GPIO_WritePin(GPIOB, scl_mask, GPIO_PIN_RESET);
+	for (volatile int i = 0; i < 500; i++) {}
+	uint8_t scl_lo = (GPIOB->IDR >> scl_pin) & 1;
+	uint8_t sda_when_scl_lo = (GPIOB->IDR >> sda_pin) & 1;
+
+	/* 3. Release SCL, pull SDA low */
+	HAL_GPIO_WritePin(GPIOB, scl_mask, GPIO_PIN_SET);
+	HAL_GPIO_WritePin(GPIOB, sda_mask, GPIO_PIN_RESET);
+	for (volatile int i = 0; i < 500; i++) {}
+	uint8_t sda_lo = (GPIOB->IDR >> sda_pin) & 1;
+	uint8_t scl_when_sda_lo = (GPIOB->IDR >> scl_pin) & 1;
+
+	/* 4. Release both */
+	HAL_GPIO_WritePin(GPIOB, sda_mask, GPIO_PIN_SET);
+	for (volatile int i = 0; i < 500; i++) {}
+
+	sprintf(msg, "%s (PB%d/PB%d) pin test:", name, scl_pin, sda_pin);
 	uart_send(msg);
 
+	int ok = 1;
+	if (!scl_hi) { uart_send(" SCL_STUCK_LOW"); ok = 0; }
+	if (!sda_hi) { uart_send(" SDA_STUCK_LOW"); ok = 0; }
+	if (scl_lo)  { uart_send(" SCL_STUCK_HIGH(short_VCC)"); ok = 0; }
+	if (sda_lo)  { uart_send(" SDA_STUCK_HIGH(short_VCC)"); ok = 0; }
+	if (scl_hi && sda_hi && (!sda_when_scl_lo || !scl_when_sda_lo)) {
+		uart_send(" SCL_SDA_SHORTED");
+		ok = 0;
+	}
+	if (ok) {
+		uart_send(" OK");
+	}
+	puts_ln("");
+
+	/* Restore Alternate Function Open-Drain and peripheral */
+	g.Mode = GPIO_MODE_AF_OD;
+	HAL_GPIO_Init(GPIOB, &g);
 	i2c_bus_unlock(hi2c);
+}
+
+static void i2c_scan_bus(I2C_HandleTypeDef *hi2c, const char *name)
+{
+	char msg[96];
+	sprintf(msg, "%s scan:", name);
+	uart_send(msg);
 
 	int found = 0;
 	for (uint16_t addr = 1; addr < 128; addr++) {
@@ -266,7 +319,9 @@ static void i2c_scan_bus(I2C_HandleTypeDef *hi2c, const char *name)
 
 static int cmd_scan(float a, float b)
 {
+	i2c_pin_test(s[0].dev.hi2c, "I2C1");
 	i2c_scan_bus(s[0].dev.hi2c, "I2C1");
+	i2c_pin_test(s[1].dev.hi2c, "I2C2");
 	i2c_scan_bus(s[1].dev.hi2c, "I2C2");
 	return 0;
 }
