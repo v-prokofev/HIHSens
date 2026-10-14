@@ -236,15 +236,28 @@ static int cmd_help(float a, float b)
 
 static void i2c_scan_bus(I2C_HandleTypeDef *hi2c, const char *name)
 {
-	char msg[64];
-	sprintf(msg, "%s scan:", name);
+	char msg[96];
+	int scl_pin = (hi2c->Instance == I2C1) ? 6 : 10;
+	int sda_pin = (hi2c->Instance == I2C1) ? 7 : 11;
+	uint8_t scl_lvl = (GPIOB->IDR >> scl_pin) & 1;
+	uint8_t sda_lvl = (GPIOB->IDR >> sda_pin) & 1;
+
+	sprintf(msg, "%s (PB%d/PB%d) lines: SCL=%u SDA=%u | scan:",
+			name, scl_pin, sda_pin, scl_lvl, sda_lvl);
 	uart_send(msg);
+
+	i2c_bus_unlock(hi2c);
+
 	int found = 0;
 	for (uint16_t addr = 1; addr < 128; addr++) {
-		if (HAL_I2C_IsDeviceReady(hi2c, (addr << 1), 1, 10) == HAL_OK) {
+		HAL_StatusTypeDef st = HAL_I2C_IsDeviceReady(hi2c, (addr << 1), 1, 10);
+		if (st == HAL_OK) {
 			sprintf(msg, " 0x%02X", addr);
 			uart_send(msg);
 			found++;
+		} else if (st == HAL_TIMEOUT || st == HAL_BUSY) {
+			/* Reset bus if locked up by errata or line disturbance */
+			i2c_bus_unlock(hi2c);
 		}
 	}
 	if (!found) {
@@ -332,17 +345,24 @@ static void handle_line(void)
 }
 
 /* ---------------- public ---------------- */
-/* 4.7k I2C pull-ups are soldered to neighbour pins:
- * PB6(SCL1)-PB5, PB7(SDA1)-PB8, PB10(SCL2)-PB1, PB11(SDA2)-3V3.
- * PB1/PB5/PB8 are driven high (push-pull) to feed them. Call before I2C init. */
+/* 4.7k I2C pull-ups are soldered to neighbour pins on the headers:
+ * PB0, PB1, PB5, PB8, PB9, PB12 are driven high (push-pull 2 MHz, 3.3V)
+ * so that any neighbor pin used for pull-up is powered. Call before I2C init. */
 void app_pullups_init(void)
 {
 	RCC->APB2ENR |= RCC_APB2ENR_IOPBEN;
 	(void)RCC->APB2ENR;
-	GPIOB->BSRR = (1u << 1) | (1u << 5) | (1u << 8);                 /* high first */
-	GPIOB->CRL = (GPIOB->CRL & ~((0xFu << 4) | (0xFu << 20)))
-	           | (0x2u << 4) | (0x2u << 20);                          /* PB1, PB5: out PP 2 MHz */
-	GPIOB->CRH = (GPIOB->CRH & ~(0xFu << 0)) | (0x2u << 0);         /* PB8: out PP 2 MHz */
+
+	/* Drive pins HIGH first */
+	GPIOB->BSRR = (1u << 0) | (1u << 1) | (1u << 5) | (1u << 8) | (1u << 9) | (1u << 12);
+
+	/* PB0 (bits 0..3), PB1 (bits 4..7), PB5 (bits 20..23) as Out PP 2 MHz (0x2) */
+	GPIOB->CRL = (GPIOB->CRL & ~((0xFu << 0) | (0xFu << 4) | (0xFu << 20)))
+	           | (0x2u << 0) | (0x2u << 4) | (0x2u << 20);
+
+	/* PB8 (bits 0..3), PB9 (bits 4..7), PB12 (bits 16..19) as Out PP 2 MHz (0x2) */
+	GPIOB->CRH = (GPIOB->CRH & ~((0xFu << 0) | (0xFu << 4) | (0xFu << 16)))
+	           | (0x2u << 0) | (0x2u << 4) | (0x2u << 16);
 }
 
 void app_clock_init(void)
