@@ -14,7 +14,7 @@
 #include <stdlib.h>
 
 #define DEV_NAME      "HMP556"
-#define FW_VERSION    "0.1"
+#define FW_VERSION    "0.2"
 #ifndef GIT_COMMIT
 #define GIT_COMMIT    "unknown"
 #endif
