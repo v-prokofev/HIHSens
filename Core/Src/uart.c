@@ -6,26 +6,13 @@
 #include <string.h>
 
 #define RX_SIZE 128
-#define TX_SIZE 256
 
 static uint8_t rx_buf[RX_SIZE];
-static uint8_t tx_buf[TX_SIZE];
 static uint16_t rx_tail;
 
-static int tx_busy(void)
-{
-	return (DMA1_Channel4->CCR & DMA_CCR_EN) && !(DMA1->ISR & DMA_ISR_TCIF4);
-}
-
-static void tx_wait(void)
-{
-	uint32_t to = 1000000;
-	while (tx_busy() && --to) {}
-}
 
 void uart_set_baud(uint32_t baud)
 {
-	tx_wait();
 	uint32_t to = 100000;
 	while (!(USART1->SR & USART_SR_TC) && --to) {}
 	USART1->CR1 &= ~USART_CR1_UE;
@@ -55,10 +42,7 @@ void uart_init(uint32_t baud)
 	DMA1_Channel5->CCR   = DMA_CCR_MINC | DMA_CCR_CIRC | DMA_CCR_EN;
 	rx_tail = 0;
 
-	/* TX: DMA1 Ch4, mem->periph */
-	DMA1_Channel4->CCR  = 0;
-	DMA1_Channel4->CPAR = (uint32_t)&USART1->DR;
-
+	USART1->CR3 = USART_CR3_DMAR;
 	USART1->CR1 = USART_CR1_UE | USART_CR1_TE | USART_CR1_RE;
 }
 
@@ -75,15 +59,11 @@ void uart_send(const char *s)
 
 int uart_getc(void)
 {
-	if (USART1->SR & (USART_SR_ORE | USART_SR_NE | USART_SR_FE | USART_SR_PE)) {
-		volatile uint32_t sr = USART1->SR;
-		volatile uint32_t dr = USART1->DR;
-		(void)sr;
-		(void)dr;
-	}
-
-	if (USART1->SR & USART_SR_RXNE) {
-		return (uint8_t)(USART1->DR & 0xFF);
+	uint16_t head = (uint16_t)(RX_SIZE - DMA1_Channel5->CNDTR);
+	if (rx_tail != head) {
+		uint8_t c = rx_buf[rx_tail];
+		rx_tail = (rx_tail + 1) % RX_SIZE;
+		return c;
 	}
 	return -1;
 }

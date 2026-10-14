@@ -48,7 +48,7 @@ static void cfg_defaults(void)
 	cfg.id = 1;
 	cfg.baud = 115200;
 	cfg.freq_mhz = 1000;
-	cfg.debug = 0;
+	cfg.debug = 1;
 }
 
 static void cfg_load(void)
@@ -210,11 +210,9 @@ static void print_line(void)
 		}
 	}
 	*p++ = ' '; p = fmt_fixed(p, cpu_temp(), 1);
-	if (cfg.debug) {
-		p += sprintf(p, " [%u %u %lu %lu %lu %u]", s[0].ok, s[1].ok,
-				(unsigned long)s[0].rx_cnt, (unsigned long)s[1].rx_cnt,
-				(unsigned long)uart_rx_cnt, clk_valid);
-	}
+	p += sprintf(p, " [%u %u %lu %lu %lu %u]", s[0].ok, s[1].ok,
+			(unsigned long)s[0].rx_cnt, (unsigned long)s[1].rx_cnt,
+			(unsigned long)uart_rx_cnt, clk_valid);
 	strcpy(p, "\r\n");
 	uart_send(out);
 }
@@ -437,7 +435,9 @@ void app_loop(void)
 	while ((c = uart_getc()) >= 0) {
 		if (c == '\r' || c == '\n') {
 			if (line_len) { line[line_len] = 0; handle_line(); line_len = 0; }
-		} else if (line_len < sizeof(line) - 1) {
+		} else if (c == 0x08 || c == 0x7F) {
+			if (line_len > 0) line_len--;
+		} else if (c >= ' ' && line_len < sizeof(line) - 1) {
 			line[line_len++] = (char)c;
 		}
 	}
